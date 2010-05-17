@@ -876,11 +876,8 @@ def CreateBotoConfigFile():
   else:
     config_path = ('.%s.boto' % os.sep)
   sys.stderr.write('You have no boto config file.  This script will create '
-                   'one at\n%s\ncontaining credentials for each of your '
-                   'storage providers,\nbased on your responses to the '
-                   'following questions. Note that if you enter "n"\nfor any '
-                   'questions you can always edit the generated config file '
-                   'with additional\ncredentials later.\n\n' % config_path)
+                   'one at\n%s\ncontaining your credentials, based on your '
+                   'responses to the following questions.\n\n' % config_path)
 
   provider_map = {'Amazon': 'aws', 'Google': 'gs'}
   uri_map = {'Amazon': 's3', 'Google': 'gs'}
@@ -888,8 +885,7 @@ def CreateBotoConfigFile():
   sec_keys = {}
   got_creds = False
   for provider in provider_map:
-    answer = raw_input('Do you have %s Storage service keys? [Y/n] ' % provider)
-    if not answer or answer.lower()[0] != 'n':
+    if provider == 'Google':
       key_ids[provider] = raw_input('What is your %s access key ID? ' %
                                     provider)
       sec_keys[provider] = raw_input('What is your %s secret access key? ' %
