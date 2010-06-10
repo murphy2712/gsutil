@@ -90,9 +90,8 @@ SYNOPSIS
     Push directory to cloud uri:
       push [-o] [-p] src_uri dst_uri
       Options:
-        -o : overwrite. Upload files regardless if necessary.
+        -o : overwrite. Upload files always regardless if objects differ.
         -p : prune. Delete objects at cloud_uri that do not exist locally.
-		-y : yes. Proceed without confirmation.
     Remove buckets:
       rb uri1 [uri2...]
     Remove objects:
@@ -812,7 +811,16 @@ def MoveObjsCommand(args, sub_opts, debug):
 def PushCommand(args, sub_opts, debug):
   """Implementation of push command.
 
-     Pushes a directory to a cloud uri.
+    Pushes a directory to a cloud uri.
+
+    Files in the local directory will be uploaded to the location specified by the cloud uri.
+    The buckey key is the file path relative to the prefix of the cloud uri, if specified.
+    Example: push /etc gs://vps/etcbackup , this would place the passwd file at gs://vps/etcbackup/passwd
+
+
+  Params:
+    args[0] (src_uri) - local directory
+    args[1] (dst_uri) - cloud uri, optionally with prefix
 
   Args:
     args: command-line arguments
@@ -820,17 +828,19 @@ def PushCommand(args, sub_opts, debug):
     debug: flag indicating whether to include debug output
   """
 
-  overwrite = False
-  prune = False
-  yes = False
+  # capture options
+  opt_overwrite = False
+  opt_prune = False
+  opt_yes = False
   for o, foo in sub_opts:
     if o == '-o':
-      overwrite = True
+      opt_overwrite = True
     if o == '-p':
-      prune = True
+      opt_prune = True
     if o == '-y':
-      yes = True
+      opt_yes = True
 
+  # capture source and destination arguments
   src_uri = StorageUri(args[0], False, debug)
   dst_uri = StorageUri(args[1], False, debug)
 
@@ -846,38 +856,78 @@ def PushCommand(args, sub_opts, debug):
   if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
     dst_uri.object_name += '/'
 
-  # list files
-  src_list = []
+  print "%s --> %s" % (src_uri, dst_uri)
+
+  # load files into dictionary; key is bucket key string, value is StorageUri
+  print "listing files ..."
+  src_list = {}
   for root, unused_dirs, files in os.walk(src_uri.object_name):
     for name in files:
-      src_list.append(StorageUri(os.path.join(root, name)))
+      uri = StorageUri(os.path.join(root, name))
+      # calculate the bucket key by prepending the prefix of the dst_uri to the file path relative to the src_uri
+      key = dst_uri.object_name + uri.object_name[len(src_uri.object_name) +1:]
+      src_list[key] = uri
+      if debug:
+        print "local item: %s" % (src_list[key],)
 
-  # list bucket objects (objects are Keys)
-  dst_list = []
-  bucket_listing = dst_uri.get_bucket(validate = False).list(prefix = dst_uri.object_name)
-  for obj in bucket_listing:
-    dst_list.append(obj)
+  # list bucket objects; key is bucket key string, value is Key
+  print "listing bucket ..."
+  dst_list = {}
+  bucket = dst_uri.get_bucket().list(prefix = dst_uri.object_name)
+  for obj in bucket:
+    dst_list[obj.name] = obj
+    if debug:
+      print "bucket item: %s" % (dst_list[obj.name],)
 
-  ## TODO
-  #  calc uploads (new, different)
-  #  calc deletes
-  #  calc nochange
+  print "managing lists ..."
+  # calculate deletes, find all objects in cloud without a corresponding local file
+  deletes = {}
+  delete_keys = set(dst_list.keys()) - set(src_list.keys())
+  for key in delete_keys:
+    deletes[key] = dst_list[key]
+    if debug:
+      print "to delete: %s" % (deletes[key],)
 
-  print "source: %s" % src_uri
-  print "destination: provider: %s, bucket: %s, object: %s" % (dst_uri.provider, dst_uri.bucket_name, dst_uri.object_name)
+  # calculate uploads: all local files
+  uploads = {}
+  for key in src_list.keys():
+    uploads[key] = src_list[key]
+    if debug:
+      print "to upload: %s" % (uploads[key],)
 
-  for uri in src_list:
-    target_name = uri.object_name[len(src_uri.object_name) +1:]
-    target_uri = dst_uri.clone_replace_name(dst_uri.object_name + target_name)
+  # calculate nochange where local file and bucket key have the same md5 hash
+  nochange = {}
+  md5 = boto.s3.Key()
+  for key, uri in uploads.items():
+    if key in dst_list.keys():
+      md5_local = md5.compute_md5(uri.get_key().fp)[0]
+      md5_cloud = dst_list[key].etag.strip('"\'')
+      if md5_local == md5_cloud:
+        nochange[key] = uri
+        if debug:
+          print "nochange: %s" % (nochange[key],)
+
+  # remove nochange from uploads
+  if not opt_overwrite:
+    diff_keys = set(uploads.keys()) - set(nochange.keys())
+    uploads.clear()
+    for key in diff_keys:
+      uploads[key] = src_list[key]      
+
+  # perform deletes
+  if opt_prune:
+    for key, uri in deletes.items():
+      target_uri = dst_uri.clone_replace_name(key)
+      print "deleting %s ..." % (target_uri)
+      target_uri.delete_key()
+
+  # perform uploads
+  for key, uri in uploads.items():
+    target_uri = dst_uri.clone_replace_name(key)
     print "copying %s --> %s ..." % (uri, target_uri)
     PerformCopy(uri, target_uri)
 
-  #for key in dst_list:
-  #  print key, key.etag.strip('"\'')
-
-  #key = boto.s3.Key()
-  #for uri in src_list:
-  #  print uri , key.compute_md5(uri.get_key().fp)[0]
+  print "finished."
 
 
 def RemoveBucketsCommand(args, unused_sub_opts, debug):
