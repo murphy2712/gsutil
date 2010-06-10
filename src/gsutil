@@ -833,9 +833,28 @@ def PushCommand(args, sub_opts, debug):
   # append trailing slash to dst_uri.object_name if a prefix/filename was provided with the cloud uri
   if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
     dst_uri.object_name += '/'
+	
+  # list files
+  src_list = []
+  for root, unused_dirs, files in os.walk(src_uri.object_name):
+    for name in files:
+      src_list.append(StorageUri(os.path.join(root, name)))
+  
+  # list bucket objects (objects are Keys)
+  dst_list = []
+  bucket_listing = dst_uri.get_bucket(validate = False).list(prefix = dst_uri.object_name)
+  for obj in bucket_listing:
+    dst_list.append(obj)
   
   print "source: %s" % src_uri
   print "destination: provider: %s, bucket: %s, object: %s" % (dst_uri.provider, dst_uri.bucket_name, dst_uri.object_name)
+  
+  for key in dst_list:
+    print key, key.etag.strip('"\'')
+
+  key = boto.s3.Key()
+  for uri in src_list:
+    print uri , key.compute_md5(uri.get_key().fp)[0]
 
 
 def RemoveBucketsCommand(args, unused_sub_opts, debug):
