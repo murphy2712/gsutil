@@ -92,6 +92,7 @@ SYNOPSIS
       Options:
         -o : overwrite. Upload files regardless if necessary.
         -p : prune. Delete objects at cloud_uri that do not exist locally.
+		-y : yes. Proceed without confirmation.
     Remove buckets:
       rb uri1 [uri2...]
     Remove objects:
@@ -819,6 +820,17 @@ def PushCommand(args, sub_opts, debug):
     debug: flag indicating whether to include debug output
   """
 
+  overwrite = False
+  prune = False
+  yes = False
+  for o, foo in sub_opts:
+    if o == '-o':
+      overwrite = True
+    if o == '-p':
+      prune = True
+    if o == '-y':
+      yes = True
+
   src_uri = StorageUri(args[0], False, debug)
   dst_uri = StorageUri(args[1], False, debug)
 
@@ -833,28 +845,39 @@ def PushCommand(args, sub_opts, debug):
   # append trailing slash to dst_uri.object_name if a prefix/filename was provided with the cloud uri
   if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
     dst_uri.object_name += '/'
-	
+
   # list files
   src_list = []
   for root, unused_dirs, files in os.walk(src_uri.object_name):
     for name in files:
       src_list.append(StorageUri(os.path.join(root, name)))
-  
+
   # list bucket objects (objects are Keys)
   dst_list = []
   bucket_listing = dst_uri.get_bucket(validate = False).list(prefix = dst_uri.object_name)
   for obj in bucket_listing:
     dst_list.append(obj)
-  
+
+  ## TODO
+  #  calc uploads (new, different)
+  #  calc deletes
+  #  calc nochange
+
   print "source: %s" % src_uri
   print "destination: provider: %s, bucket: %s, object: %s" % (dst_uri.provider, dst_uri.bucket_name, dst_uri.object_name)
-  
-  for key in dst_list:
-    print key, key.etag.strip('"\'')
 
-  key = boto.s3.Key()
   for uri in src_list:
-    print uri , key.compute_md5(uri.get_key().fp)[0]
+    target_name = uri.object_name[len(src_uri.object_name) +1:]
+    target_uri = dst_uri.clone_replace_name(dst_uri.object_name + target_name)
+    print "copying %s --> %s ..." % (uri, target_uri)
+    PerformCopy(uri, target_uri)
+
+  #for key in dst_list:
+  #  print key, key.etag.strip('"\'')
+
+  #key = boto.s3.Key()
+  #for uri in src_list:
+  #  print uri , key.compute_md5(uri.get_key().fp)[0]
 
 
 def RemoveBucketsCommand(args, unused_sub_opts, debug):
@@ -1075,7 +1098,7 @@ commands = {
     'ls': [ListCommand, 0, NO_MAX, 'l', False, True, 0],
     'mb': [MakeBucketsCommand, 1, NO_MAX, '', False, False, 0],
     'mv': [MoveObjsCommand, 2, NO_MAX, '', True, False, 0],
-    'push': [PushCommand, 2, 2, 'op', True, True, 0],
+    'push': [PushCommand, 2, 2, 'opy', True, True, 0],
     'rb': [RemoveBucketsCommand, 1, NO_MAX, '', False, False, 0],
     'rm': [RemoveObjsCommand, 1, NO_MAX, '', False, False, 0],
     'setacl': [SetAclCommand, 2, NO_MAX, '', False, False, 1],
