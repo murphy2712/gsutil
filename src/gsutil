@@ -952,7 +952,7 @@ def readable_int(x):
   if y == 0:
     return "    "
   elif y < 1000:
-    return "%4s " % x
+    return "%3s " % x
   elif y < K:
     return "%s" % x
   elif y < M:
