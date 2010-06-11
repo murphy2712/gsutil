@@ -900,17 +900,11 @@ def PushCommand(args, sub_opts, debug):
 
   print
   if opt_prune:
-    size_d = 0
-    for v in deletes.values():
-      size_d += v.psize
+    size_d = sum([v.psize for v in deletes.values()])
     print "deletes:   %s (%s)" % (readable_int(size_d), len(deletes.keys()))
-  size_u = 0
-  for v in uploads.values():
-    size_u += v.psize
+  size_u = sum([v.psize for v in uploads.values()])
   print "uploads:   %s (%s)" % (readable_int(size_u), len(uploads.keys()))
-  size_n = 0
-  for v in nochange.values():
-    size_n += v.psize
+  size_n = sum([v.psize for v in nochange.values()])
   print "unchanged: %s (%s)" % (readable_int(size_n), len(nochange.keys()))
 
   # exit now if no tasks
@@ -930,7 +924,6 @@ def PushCommand(args, sub_opts, debug):
 
   print
 
-  # TODO: cleanup size calculation
   # TODO: readable_int format w/ decimal point
   # TODO: cleanup copying status URIs
 
