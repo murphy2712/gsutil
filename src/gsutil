@@ -90,8 +90,9 @@ SYNOPSIS
     Push directory to cloud uri:
       push [-o] [-p] src_uri dst_uri
       Options:
-        -o : overwrite. Upload files always regardless if objects differ.
+        -o : overwrite. Upload files always, regardless if objects differ.
         -p : prune. Delete objects at cloud_uri that do not exist locally.
+        -y : yes. Bypass confirmation prompt, assuming yes.
     Remove buckets:
       rb uri1 [uri2...]
     Remove objects:
@@ -862,28 +863,29 @@ def PushCommand(args, sub_opts, debug):
   # load files into dictionary; key is bucket key string, value is StorageUri
   print "listing files ..."
   src_list = {}
-  src_checksum = {}
   md5 = boto.s3.Key()
   for root, unused_dirs, files in os.walk(src_uri.object_name):
     for name in files:
       uri = StorageUri(os.path.join(root, name))
       # calculate the bucket key by prepending the prefix of the dst_uri to the file path relative to the src_uri
-      key = dst_uri.object_name + uri.object_name[len(src_uri.object_name) +1:]
-      src_list[key] = uri
-      src_checksum[key] = md5.compute_md5(uri.get_key().fp)[0]
+      uri.pname = dst_uri.object_name + uri.object_name[len(src_uri.object_name) +1:]
+      uri.phash = md5.compute_md5(uri.get_key().fp)[0]
+      uri.psize = os.stat(uri.object_name)[stat.ST_SIZE]
+      src_list[uri.pname] = uri
       if debug:
-        print "local item: %s" % (src_list[key],)
+        print "local item: %s" % (src_list[uri.pname],)
 
   # list bucket objects; key is bucket key string, value is Key
   print "listing bucket ..."
   dst_list = {}
-  dst_checksum = {}
   bucket = dst_uri.get_bucket().list(prefix = dst_uri.object_name)
   for obj in bucket:
-    dst_list[obj.name] = obj
-    dst_checksum[obj.name] = obj.etag.strip('"\'')
+    obj.pname = obj.name
+    obj.phash = obj.etag.strip('"\'')
+    obj.psize = obj.size
+    dst_list[obj.pname] = obj
     if debug:
-      print "bucket item: %s" % (dst_list[obj.name],)
+      print "bucket item: %s" % (dst_list[obj.pname],)
 
   print "managing lists ..."
   # calculate deletes, find all objects in cloud without a corresponding local file
@@ -891,14 +893,46 @@ def PushCommand(args, sub_opts, debug):
   # calculate uploads: all local files
   uploads = dict((key, src_list[key]) for key in src_list.keys())
   # calculate nochange: local file and bucket key have the same checksum
-  nochange = dict((key, src_list[key]) for key in src_list.keys() if key in dst_list.keys() and src_checksum[key] == dst_checksum[key])
+  nochange = dict((key, src_list[key]) for key in src_list.keys() if key in dst_list.keys() and src_list[key].phash == dst_list[key].phash)
   # remove nochange from uploads
   if not opt_overwrite:
     uploads = dict((key, src_list[key]) for key in uploads.keys() if not key in nochange.keys())
 
-  # TODO: display info on lists
-  # TODO: show prompt
-  # TODO: activate -y option
+  print
+  if opt_prune:
+    size_d = 0
+    for v in deletes.values():
+      size_d += v.psize
+    print "deletes:   %s (%s)" % (readable_int(size_d), len(deletes.keys()))
+  size_u = 0
+  for v in uploads.values():
+    size_u += v.psize
+  print "uploads:   %s (%s)" % (readable_int(size_u), len(uploads.keys()))
+  size_n = 0
+  for v in nochange.values():
+    size_n += v.psize
+  print "unchanged: %s (%s)" % (readable_int(size_n), len(nochange.keys()))
+
+  # exit now if no tasks
+  if (not opt_prune or len(deletes.keys()) == 0) and (len(uploads.keys()) == 0):
+    print
+    print "Nothing to do!"
+    return
+
+  # prompt to continue
+  if not opt_yes:
+    print
+    prompt = "Are you sure you want to continue?(y/N) "
+    answer = raw_input(prompt).strip()
+    if answer != 'y':
+      print 'Aborted.'
+      return
+
+  print
+
+  # TODO: cleanup size calculation
+  # TODO: readable_int format w/ decimal point
+  # TODO: cleanup copying status URIs
 
   # perform deletes
   if opt_prune:
@@ -908,13 +942,25 @@ def PushCommand(args, sub_opts, debug):
       target_uri.delete_key()
 
   # perform uploads, sort by filesize
-  for key, uri in sorted(uploads.iteritems(), key=lambda x: os.stat(x[1].object_name)[stat.ST_SIZE]):
+  for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
     print "copying %s --> %s..." % (uri, target_uri)
     PerformCopy(uri, target_uri)
 
-  print "finished."
+  print "Finished."
 
+def readable_int(x):
+  "Formats the number of bytes in kilo-, mega- or giga- bytes"
+
+  y = abs(x)
+  if y < 1024:
+    return str(x) + ' '
+  elif y < (1024 * 1024):
+    return str(x / 1024) + 'K'
+  elif y < (1024 * 1024 * 1024):
+    return str(x / (1024 * 1024)) + 'M'
+  else:
+    return str(x / (1024 * 1024 * 1024)) + 'G'
 
 def RemoveBucketsCommand(args, unused_sub_opts, debug):
   """Implementation of rb command.
