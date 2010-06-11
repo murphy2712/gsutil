@@ -901,11 +901,11 @@ def PushCommand(args, sub_opts, debug):
   print
   if opt_prune:
     size_d = sum([v.psize for v in deletes.values()])
-    print "deletes:   %s (%s)" % (readable_int(size_d), len(deletes.keys()))
+    print "deletes:   %5s     %s" % (len(deletes.keys()), readable_int(size_d))
   size_u = sum([v.psize for v in uploads.values()])
-  print "uploads:   %s (%s)" % (readable_int(size_u), len(uploads.keys()))
+  print "uploads:   %5s     %s" % (len(uploads.keys()), readable_int(size_u))
   size_n = sum([v.psize for v in nochange.values()])
-  print "unchanged: %s (%s)" % (readable_int(size_n), len(nochange.keys()))
+  print "unchanged: %5s     %s" % (len(nochange.keys()), readable_int(size_n))
 
   # exit now if no tasks
   if (not opt_prune or len(deletes.keys()) == 0) and (len(uploads.keys()) == 0):
@@ -924,7 +924,6 @@ def PushCommand(args, sub_opts, debug):
 
   print
 
-  # TODO: readable_int format w/ decimal point
   # TODO: cleanup copying status URIs
 
   # perform deletes
@@ -943,17 +942,25 @@ def PushCommand(args, sub_opts, debug):
   print "Finished."
 
 def readable_int(x):
-  "Formats the number of bytes in kilo-, mega- or giga- bytes"
+  "Formats the number of bytes as kilo-, mega- or giga- bytes"
+
+  K = 1024.0
+  M = K * 1024
+  G = M * 1024
 
   y = abs(x)
-  if y < 1024:
-    return str(x) + ' '
-  elif y < (1024 * 1024):
-    return str(x / 1024) + 'K'
-  elif y < (1024 * 1024 * 1024):
-    return str(x / (1024 * 1024)) + 'M'
+  if y == 0:
+    return "    "
+  elif y < 1000:
+    return "%4s " % x
+  elif y < K:
+    return "%s" % x
+  elif y < M:
+    return "%5.1fK" % float(x/K)
+  elif y < G:
+    return "%5.1fM" % float(x/M)
   else:
-    return str(x / (1024 * 1024 * 1024)) + 'G'
+    return "%5.1fG" % float(x/G)
 
 def RemoveBucketsCommand(args, unused_sub_opts, debug):
   """Implementation of rb command.
