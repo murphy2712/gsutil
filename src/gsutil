@@ -895,7 +895,6 @@ def PushCommand(args, sub_opts, debug):
   # remove nochange from uploads
   if not opt_overwrite:
     uploads = dict((key, src_list[key]) for key in uploads.keys() if not key in nochange.keys())
-  # TODO: sort uploads by size ascending
 
   # TODO: display info on lists
   # TODO: show prompt
@@ -908,10 +907,10 @@ def PushCommand(args, sub_opts, debug):
       print "deleting %s ..." % (target_uri)
       target_uri.delete_key()
 
-  # perform uploads
-  for key, uri in uploads.items():
+  # perform uploads, sort by filesize
+  for key, uri in sorted(uploads.iteritems(), key=lambda x: os.stat(x[1].object_name)[stat.ST_SIZE]):
     target_uri = dst_uri.clone_replace_name(key)
-    print "copying %s --> %s ..." % (uri, target_uri)
+    print "copying %s --> %s..." % (uri, target_uri)
     PerformCopy(uri, target_uri)
 
   print "finished."
