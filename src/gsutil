@@ -919,14 +919,14 @@ def PushCommand(args, sub_opts, debug):
     prompt = "Are you sure you want to continue?(y/N) "
     answer = raw_input(prompt).strip()
     if answer != 'y':
-      print 'Aborted.'
+      print "Aborted."
       return
 
   print
 
-  # perform deletes
+  # perform deletes, sort alphabetically
   if opt_prune:
-    for key, uri in deletes.items():
+    for key, uri in sorted(deletes.iteritems(), key=lambda x: x[1].pname):
       target_uri = dst_uri.clone_replace_name(key)
       print "deleting %s ..." % (target_uri.object_name,)
       if not opt_simulate:
