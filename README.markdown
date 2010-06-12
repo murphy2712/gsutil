@@ -6,9 +6,8 @@ I have added a push command to upload local directories to a cloud uri only if t
 ## Push Command
 Push directory to cloud uri, only uploading if the files differ.
 ### Syntax
-		gsutil push [-o] [-p] [-s] [-y] src_uri dst_uri
+		gsutil push [-p] [-s] [-y] src_uri dst_uri
 ### Options
-		-o : overwrite. Upload all files to dst_uri even if the files are identical.
 		-p : prune.     Delete objects at cloud_uri that do not exist at src_uri.
 		-s : simulate.  Simulate actions but do not actually perform them.
 		-y : yes.       Bypass confirmation prompt, assuming yes.
