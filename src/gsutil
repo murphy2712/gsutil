@@ -857,7 +857,7 @@ def PushCommand(args, sub_opts, debug):
   if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
     dst_uri.object_name += '/'
 
-  # load files into dictionary; key is bucket key string, value is StorageUri
+  # load files into dictionary; key is bucket key string, value is boto.storageuri
   print "listing files ..."
   src_list = {}
   md5 = boto.s3.Key()
@@ -872,7 +872,7 @@ def PushCommand(args, sub_opts, debug):
       if debug:
         print "local item: %s" % (src_list[uri.pname],)
 
-  # list bucket objects; key is bucket key string, value is Key
+  # list bucket objects; key is bucket key string, value is boto.s3.Key
   print "listing bucket ..."
   dst_list = {}
   bucket = dst_uri.get_bucket().list(prefix = dst_uri.object_name)
@@ -895,6 +895,9 @@ def PushCommand(args, sub_opts, debug):
   if not opt_overwrite:
     uploads = dict((key, src_list[key]) for key in uploads.keys() if not key in nochange.keys())
 
+  # summarize 
+  print
+  print "%s --> %s" % (src_uri.object_name, dst_uri)
   print
   if opt_prune:
     size_d = sum([v.psize for v in deletes.values()])
@@ -921,23 +924,18 @@ def PushCommand(args, sub_opts, debug):
 
   print
 
-  # TODO: cleanup copying status URIs
-
-  # output 
-  print "%s --> %s" % (src_uri, dst_uri)
-
   # perform deletes
   if opt_prune:
     for key, uri in deletes.items():
       target_uri = dst_uri.clone_replace_name(key)
-      print "deleting %s ..." % (target_uri)
+      print "deleting %s ..." % (target_uri.object_name,)
       if not opt_simulate:
         target_uri.delete_key()
 
   # perform uploads, sort by filesize
   for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
-    print "copying %s --> %s..." % (uri, target_uri)
+    print "uploading %s ..." % (target_uri.object_name,)
     if not opt_simulate:
       PerformCopy(uri, target_uri)
 
