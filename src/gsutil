@@ -87,12 +87,16 @@ SYNOPSIS
       mv src_uri dst_uri
         - or -
       mv uri1 [uri2 ...] dst_uri
-    Push directory to cloud uri:
-      push [-o] [-p] src_uri dst_uri
+    Push directory to cloud uri, only uploading if the files differ:
+      push [-o] [-p] [-s] [-y] src_uri dst_uri
       Options:
-        -o : overwrite. Upload files always, regardless if objects differ.
-        -p : prune. Delete objects at cloud_uri that do not exist locally.
-        -y : yes. Bypass confirmation prompt, assuming yes.
+        -o : overwrite. Upload all files to dst_uri even if the files are identical.
+        -p : prune.     Delete objects at cloud_uri that do not exist at src_uri.
+        -s : simulate.  Simulate actions but do not actually perform them.
+        -y : yes.       Bypass confirmation prompt, assuming yes.
+      Arguments:
+        src_uri         file uri that points to a directory
+        dst_uri         cloud uri
     Remove buckets:
       rb uri1 [uri2...]
     Remove objects:
@@ -812,19 +816,12 @@ def MoveObjsCommand(args, sub_opts, debug):
 def PushCommand(args, sub_opts, debug):
   """Implementation of push command.
 
-    Pushes a directory to a cloud uri.
-
-    Files in the local directory will be uploaded to the location specified by the cloud uri.
-    The buckey key is the file path relative to the prefix of the cloud uri, if specified.
-    Example: push /etc gs://vps/etcbackup , this would place the passwd file at gs://vps/etcbackup/passwd
-
-
-  Params:
-    args[0] (src_uri) - local directory
-    args[1] (dst_uri) - cloud uri, optionally with prefix
+    Push directory to cloud uri, only uploading if the files differ.
 
   Args:
     args: command-line arguments
+      args[0] (src_uri) - local directory
+      args[1] (dst_uri) - cloud uri, optionally with prefix
     sub_opts: command-specific options from getopt.
     debug: flag indicating whether to include debug output
   """
@@ -832,12 +829,15 @@ def PushCommand(args, sub_opts, debug):
   # capture options
   opt_overwrite = False
   opt_prune = False
+  opt_simulate = False
   opt_yes = False
   for o, foo in sub_opts:
     if o == '-o':
       opt_overwrite = True
     if o == '-p':
       opt_prune = True
+    if o == '-s':
+      opt_simulate = True
     if o == '-y':
       opt_yes = True
 
@@ -856,9 +856,6 @@ def PushCommand(args, sub_opts, debug):
   # append trailing slash to dst_uri.object_name if a prefix/filename was provided with the cloud uri
   if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
     dst_uri.object_name += '/'
-
-  # output 
-  print "%s --> %s" % (src_uri, dst_uri)
 
   # load files into dictionary; key is bucket key string, value is StorageUri
   print "listing files ..."
@@ -926,18 +923,23 @@ def PushCommand(args, sub_opts, debug):
 
   # TODO: cleanup copying status URIs
 
+  # output 
+  print "%s --> %s" % (src_uri, dst_uri)
+
   # perform deletes
   if opt_prune:
     for key, uri in deletes.items():
       target_uri = dst_uri.clone_replace_name(key)
       print "deleting %s ..." % (target_uri)
-      target_uri.delete_key()
+      if not opt_simulate:
+        target_uri.delete_key()
 
   # perform uploads, sort by filesize
   for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
     print "copying %s --> %s..." % (uri, target_uri)
-    PerformCopy(uri, target_uri)
+    if not opt_simulate:
+      PerformCopy(uri, target_uri)
 
   print "Finished."
 
@@ -1180,7 +1182,7 @@ commands = {
     'ls': [ListCommand, 0, NO_MAX, 'l', False, True, 0],
     'mb': [MakeBucketsCommand, 1, NO_MAX, '', False, False, 0],
     'mv': [MoveObjsCommand, 2, NO_MAX, '', True, False, 0],
-    'push': [PushCommand, 2, 2, 'opy', True, True, 0],
+    'push': [PushCommand, 2, 2, 'opsy', True, True, 0],
     'rb': [RemoveBucketsCommand, 1, NO_MAX, '', False, False, 0],
     'rm': [RemoveObjsCommand, 1, NO_MAX, '', False, False, 0],
     'setacl': [SetAclCommand, 2, NO_MAX, '', False, False, 1],
