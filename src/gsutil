@@ -924,18 +924,28 @@ def PushCommand(args, sub_opts, debug):
 
   print
 
+  # calculate total to guage progress
+  # uploads count as filesize
+  # deletes count as 5k each
+  total = size_u
+  if opt_prune:
+    total += len(deletes.items()) * 5120
+  progress = 0
+
   # perform deletes, sort alphabetically
   if opt_prune:
     for key, uri in sorted(deletes.iteritems(), key=lambda x: x[1].pname):
       target_uri = dst_uri.clone_replace_name(key)
-      print "deleting %s ..." % (target_uri.object_name,)
+      print "[%s%%] deleting %s ..." % ((progress * 100 / total), target_uri.object_name)
+      progress += 5120
       if not opt_simulate:
         target_uri.delete_key()
 
   # perform uploads, sort by filesize
   for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
-    print "uploading %s [%s] ..." % (target_uri.object_name, readable_int(uri.psize))
+    print "[%s%%] uploading %s [%s] ..." % ((progress * 100 / total), target_uri.object_name, readable_int(uri.psize))
+    progress += uri.psize
     if not opt_simulate:
       PerformCopy(uri, target_uri)
 
