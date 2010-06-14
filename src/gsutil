@@ -815,12 +815,10 @@ def MoveObjsCommand(args, sub_opts, debug):
 def PushCommand(args, sub_opts, debug):
   """Implementation of push command.
 
-    Push directory to cloud uri, only uploading if the files differ.
+    Copy objects in one URI to another but only if the object differ.
 
   Args:
     args: command-line arguments
-      args[0] (src_uri) - local directory
-      args[1] (dst_uri) - cloud uri, optionally with prefix
     sub_opts: command-specific options from getopt.
     debug: flag indicating whether to include debug output
   """
@@ -841,44 +839,23 @@ def PushCommand(args, sub_opts, debug):
   src_uri = StorageUri(args[0], False, debug)
   dst_uri = StorageUri(args[1], False, debug)
 
-  # check that src_uri is a file uri, is a directory and exists
-  if not src_uri.is_file_uri() or not src_uri.names_container() or not os.path.exists(src_uri.object_name):
-    OutputAndExit('src_uri must be a local directory')
+  # check file uris are directories and exist
+  for uri in [src_uri, dst_uri]:
+    if uri.is_file_uri():
+      if not uri.names_container() or not os.path.exists(uri.object_name):
+        OutputAndExit('uri must be a directory: %s' % uri)
 
-  # check that dst_uri is a cloud_uri
-  if not dst_uri.is_cloud_uri():
-    OutputAndExit('dst_uri must be a cloud uri')
-
-  # append trailing slash to dst_uri.object_name if a prefix/filename was provided with the cloud uri
-  if dst_uri.object_name and not dst_uri.object_name[-1] == '/':
-    dst_uri.object_name += '/'
-
-  # load files into dictionary; key is bucket key string, value is boto.storageuri
-  print "listing files ..."
-  src_list = {}
-  md5 = boto.s3.Key()
-  for root, unused_dirs, files in os.walk(src_uri.object_name):
-    for name in files:
-      uri = StorageUri(os.path.join(root, name))
-      # calculate the bucket key by prepending the prefix of the dst_uri to the file path relative to the src_uri
-      uri.pname = dst_uri.object_name + uri.object_name[len(src_uri.object_name) +1:]
-      uri.phash = md5.compute_md5(uri.get_key().fp)[0]
-      uri.psize = os.stat(uri.object_name)[stat.ST_SIZE]
-      src_list[uri.pname] = uri
-      if debug:
-        print "local item: %s" % (src_list[uri.pname],)
-
-  # list bucket objects; key is bucket key string, value is boto.s3.Key
-  print "listing bucket ..."
-  dst_list = {}
-  bucket = dst_uri.get_bucket().list(prefix = dst_uri.object_name)
-  for obj in bucket:
-    obj.pname = obj.name
-    obj.phash = obj.etag.strip('"\'')
-    obj.psize = obj.size
-    dst_list[obj.pname] = obj
-    if debug:
-      print "bucket item: %s" % (dst_list[obj.pname],)
+  # create dictionaries
+  print "loading source ..."
+  if src_uri.is_file_uri():
+    src_list = load_files(src_uri, prefix = dst_uri.object_name)
+  else:
+    src_list = load_objects(src_uri, prefix = dst_uri.object_name)
+  print "loading destination  ..."
+  if dst_uri.is_file_uri():
+    dst_list = load_files(dst_uri, prefix = dst_uri.object_name)
+  else:
+    dst_list = load_objects(dst_uri, prefix = dst_uri.object_name)
 
   print "managing lists ..."
   # calculate deletes, find all objects in cloud without a corresponding local file
@@ -892,7 +869,7 @@ def PushCommand(args, sub_opts, debug):
 
   # summarize 
   print
-  print "%s --> %s" % (src_uri.object_name, dst_uri)
+  print "%s --> %s" % (src_uri, dst_uri)
   print
   if opt_prune:
     size_d = sum([v.psize for v in deletes.values()])
@@ -939,12 +916,39 @@ def PushCommand(args, sub_opts, debug):
   # perform uploads, sort by filesize
   for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
-    print "[%s%%] uploading %s [%s] ..." % ((progress * 100 / total), target_uri.object_name, readable_int(uri.psize))
+    print "[%s%%] [%s] uploading %s --> %s ..." % ((progress * 100 / total), readable_int(uri.psize), uri, target_uri)
     progress += uri.psize
     if not opt_simulate:
       PerformCopy(uri, target_uri)
 
   print "Finished."
+
+def load_files(target, prefix = ''):
+  "load files into dictionary; key is bucket key string, value is boto.storageuri"
+  lst = {}
+  md5 = boto.s3.Key()
+  for root, unused_dirs, files in os.walk(target.object_name):
+    for name in files:
+      uri = StorageUri(os.path.join(root, name))
+      # calculate the bucket key by prepending the prefix to the file path relative to the target
+      uri.pname = "%s/%s" % (prefix, uri.object_name[len(target.object_name) +1:])
+      uri.phash = md5.compute_md5(uri.get_key().fp)[0]
+      uri.psize = os.stat(uri.object_name)[stat.ST_SIZE]
+      lst[uri.pname] = uri
+  return lst
+
+def load_objects(target, prefix = ''):
+  "list bucket objects; key is bucket key string, value is boto.s3.Key"
+  lst = {}
+  bucket = target.get_bucket().list(prefix = target.object_name)
+  offset = len(target.object_name)
+  for obj in bucket:
+    uri = target.clone_replace_name(obj.name)
+    uri.pname = "%s/%s" % (prefix, obj.name[offset:])
+    uri.phash = obj.etag.strip('"\'')
+    uri.psize = obj.size
+    lst[uri.pname] = uri
+  return lst
 
 def readable_int(x):
   "Formats the number of bytes as kilo-, mega- or giga- bytes"
