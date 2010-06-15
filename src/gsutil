@@ -87,15 +87,12 @@ SYNOPSIS
       mv src_uri dst_uri
         - or -
       mv uri1 [uri2 ...] dst_uri
-    Push directory to cloud uri, only uploading if the files differ:
+    Copy objects from one URI to another only if they differ:
       push [-p] [-s] [-y] src_uri dst_uri
       Options:
-        -p : prune.     Delete objects at cloud_uri that do not exist at src_uri.
+        -p : prune.     Delete objects at destination that do not exist at source.
         -s : simulate.  Simulate actions but do not actually perform them.
         -y : yes.       Bypass confirmation prompt, assuming yes.
-      Arguments:
-        src_uri         file uri that points to a directory
-        dst_uri         cloud uri
     Remove buckets:
       rb uri1 [uri2...]
     Remove objects:
@@ -815,7 +812,7 @@ def MoveObjsCommand(args, sub_opts, debug):
 def PushCommand(args, sub_opts, debug):
   """Implementation of push command.
 
-    Copy objects in one URI to another but only if the object differ.
+    Copy objects from one URI to another only if they differ.
 
   Args:
     args: command-line arguments
@@ -844,6 +841,11 @@ def PushCommand(args, sub_opts, debug):
     if uri.is_file_uri():
       if not uri.names_container() or not os.path.exists(uri.object_name):
         OutputAndExit('uri must be a directory: %s' % uri)
+
+  # append trailing slash to uri.object_name
+  for uri in [src_uri, dst_uri]:
+    if uri.object_name and not uri.object_name[-1] == '/':
+      uri.object_name += '/'
 
   # create dictionaries
   print "loading source ..."
@@ -908,7 +910,7 @@ def PushCommand(args, sub_opts, debug):
   if opt_prune:
     for key, uri in sorted(deletes.iteritems(), key=lambda x: x[1].pname):
       target_uri = dst_uri.clone_replace_name(key)
-      print "[%s%%] deleting %s ..." % ((progress * 100 / total), target_uri.object_name)
+      print "[%2s%%]         deleting %s ..." % ((progress * 100 / total), target_uri)
       progress += 5120
       if not opt_simulate:
         target_uri.delete_key()
@@ -916,7 +918,7 @@ def PushCommand(args, sub_opts, debug):
   # perform uploads, sort by filesize
   for key, uri in sorted(uploads.iteritems(), key=lambda x: x[1].psize):
     target_uri = dst_uri.clone_replace_name(key)
-    print "[%s%%] [%s] uploading %s --> %s ..." % ((progress * 100 / total), readable_int(uri.psize), uri, target_uri)
+    print "[%2s%%][%s] uploading %s --> %s ..." % ((progress * 100 / total), readable_int(uri.psize), uri, target_uri)
     progress += uri.psize
     if not opt_simulate:
       PerformCopy(uri, target_uri)
@@ -924,30 +926,44 @@ def PushCommand(args, sub_opts, debug):
   print "Finished."
 
 def load_files(target, prefix = ''):
-  "load files into dictionary; key is bucket key string, value is boto.storageuri"
+  """load files into dictionary
+
+    key is destination path
+    value is boto.storageuri
+    all values contain pname, phash and psize attributes
+
+  """
   lst = {}
   md5 = boto.s3.Key()
   for root, unused_dirs, files in os.walk(target.object_name):
     for name in files:
       uri = StorageUri(os.path.join(root, name))
       # calculate the bucket key by prepending the prefix to the file path relative to the target
-      uri.pname = "%s/%s" % (prefix, uri.object_name[len(target.object_name) +1:])
+      uri.pname = "%s%s" % (prefix, uri.object_name[len(target.object_name):])
       uri.phash = md5.compute_md5(uri.get_key().fp)[0]
       uri.psize = os.stat(uri.object_name)[stat.ST_SIZE]
       lst[uri.pname] = uri
+      #print "%s: %s" % (uri.pname, uri)
   return lst
 
 def load_objects(target, prefix = ''):
-  "list bucket objects; key is bucket key string, value is boto.s3.Key"
+  """load objects into dictionary
+
+    key is destination path
+    value is boto.s3.Key
+    all values contain pname, phash and psize attributes
+
+  """
   lst = {}
   bucket = target.get_bucket().list(prefix = target.object_name)
   offset = len(target.object_name)
   for obj in bucket:
     uri = target.clone_replace_name(obj.name)
-    uri.pname = "%s/%s" % (prefix, obj.name[offset:])
+    uri.pname = "%s%s" % (prefix, obj.name[offset:])
     uri.phash = obj.etag.strip('"\'')
     uri.psize = obj.size
     lst[uri.pname] = uri
+    #print "%s: %s, %s" % (uri.pname, uri, obj)
   return lst
 
 def readable_int(x):
@@ -961,9 +977,9 @@ def readable_int(x):
   if y == 0:
     return "    "
   elif y < 1000:
-    return "%3s" % x
+    return "%5s " % x
   elif y < K:
-    return "%s" % x
+    return "%5s " % x
   elif y < M:
     return "%5.1fK" % float(x/K)
   elif y < G:
