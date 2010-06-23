@@ -853,7 +853,7 @@ def MoveObjsCommand(args, sub_opts, headers=None, debug=False):
   RemoveObjsCommand(args[0:1], sub_opts, headers, debug)
 
 
-def PushCommand(args, sub_opts, debug):
+def PushCommand(args, sub_opts, headers=None, debug=False):
   """Implementation of push command.
 
     Copy objects from one URI to another only if they differ.
@@ -877,8 +877,8 @@ def PushCommand(args, sub_opts, debug):
       opt_yes = True
 
   # capture source and destination arguments
-  src_uri = StorageUri(args[0], False, debug)
-  dst_uri = StorageUri(args[1], False, debug)
+  src_uri = StorageUri(args[0])
+  dst_uri = StorageUri(args[1])
 
   # check file uris are directories and exist
   for uri in [src_uri, dst_uri]:
@@ -965,7 +965,7 @@ def PushCommand(args, sub_opts, debug):
     print "[%2s%%][%s] uploading %s --> %s ..." % ((progress * 100 / total), readable_int(uri.psize), uri, target_uri)
     progress += uri.psize
     if not opt_simulate:
-      PerformCopy(uri, target_uri)
+      PerformCopy(uri, target_uri, sub_opts, headers)
 
   print "Finished."
 
@@ -978,7 +978,8 @@ def load_files(target, prefix = ''):
 
   """
   lst = {}
-  md5 = boto.s3.Key()
+  from boto.s3 import Key as S3Key
+  md5 = S3Key()
   for root, unused_dirs, files in os.walk(target.object_name):
     for name in files:
       uri = StorageUri(os.path.join(root, name))
